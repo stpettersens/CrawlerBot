@@ -26,9 +26,15 @@ class CrawlerBot:
 
 	disallowed = [] # Disallowed links.
 	links = [] # Allowed links.
+	titles = [] # Titles for links.
+	descs = [] # Descriptions for links.
+	keywords = [] # Keywords for links.
+	locs = [] # Links for keyworded sitemap.
 
 	nofollow = False # Do not follow a link.
 	verbose = False # Not verbose by default.
+	keyworded = False # Do not generate keyworded sitemap by default.
+	is_title = False
 	robots_str = 'CrawlerBot' # User agent string as used in a robots.txt user agent directive.
 	ua_str = 'Mozilla/5.0 (compatible; CrawlerBot/1.0; +https://github.com/stpettersens/crawlerbot)' 
 	headers = { 'User-Agent': ua_str }
@@ -51,22 +57,23 @@ class CrawlerBot:
 		# Close the connection.
 		conn.close()
 
-	def __init__(self, site, out, db, sitemap, verbose, version, info):
+	def __init__(self, site, out, db, sitemap, keyworded, verbose, version, info):
 		if len(sys.argv) == 1 or info: 
 			print(__doc__) # Display program information.
 		elif version:
 			print(CrawlerBot.ua_str) # Print user-agent string, which contains version (1.0).
 		else:
 			if verbose == True: CrawlerBot.verbose = True # Set to be verbose.
-			self.doCrawl(site, out, db, sitemap)
+			self.doCrawl(site, out, db, keyworded, sitemap)
 
 	# Do the crawl.
-	def doCrawl(self, site, out, db, sitemap):
+	def doCrawl(self, site, out, db, keyworded, sitemap):
 
 		if os.path.isfile(CrawlerBot.cache): os.remove(CrawlerBot.cache)
 
 		CrawlerBot.website = site
 		CrawlerBot.current = site
+		CrawlerBot.keyworded = keyworded
 		CrawlerBot.links.append(site)
 		
 		request = urllib2.Request(site + '/robots.txt', None, CrawlerBot.headers)
@@ -78,6 +85,10 @@ class CrawlerBot:
 		html = urllib2.urlopen(request).read()
 		parser = MetaParser()
 		parser.feed(html.lstrip())
+
+		if keyworded:
+			parser = TitleParser()
+			parser.feed(html.lstrip())
 
 		if CrawlerBot.nofollow == False:
 			parser = LinkParser()
@@ -91,10 +102,20 @@ class CrawlerBot:
 			if out == None: out = 'links.db'
 			self.writeToDatabase(CrawlerBot.links, CrawlerBot.disallowed, out)
 		elif sitemap:
-			if out == None: out = 'sitemap.xml'
-			self.writeXMLSitemap(CrawlerBot.links, CrawlerBot.disallowed, out)
+			if keyworded == False:
+				if out == None: out = 'sitemap.xml'
+				self.writeXMLSitemap(CrawlerBot.links, CrawlerBot.disallowed, out)
+			else:
+				if out == None: out = 'kw-sitemap.xml'
+				self.writeXMLKeywordedSitemap(
+					CrawlerBot.locs, 
+				 	CrawlerBot.disallowed,
+				 	CrawlerBot.titles,
+				 	CrawlerBot.descs,
+				 	CrawlerBot.keywords,
+				 	out)
 
-	# Trim links of duplicates
+	# Trim links of duplicates.
 	def trimLinks(self, links, disallowed):
 		sorted_links = set(links) 
 		f_sorted_links = []
@@ -105,6 +126,30 @@ class CrawlerBot:
 				f_sorted_links.append(link)
 		return f_sorted_links
 
+	# Trim titles of duplicates.
+	def trimTitles(self, titles):
+		sorted_titles = set(titles)
+		f_sorted_titles = []
+		for title in sorted_titles:
+			f_sorted_titles.append(title)
+		return f_sorted_titles
+
+	# Trim descriptions of duplicates.
+	def trimDescs(self, descs):
+		sorted_descs = set(descs)
+		f_sorted_descs = []
+		for desc in sorted_descs:
+			f_sorted_descs.append(desc)
+		return f_sorted_descs
+
+	# Trim keywords of duplicates.
+	def trimKeywords(self, keywords):
+		sorted_keywords = set(keywords)
+		f_sorted_keywords = []
+		for keyword in sorted_keywords:
+			f_sorted_keywords.append(keyword)
+		return f_sorted_keywords
+
 	# Follow a link
 	def followLink(self, link):
 		CrawlerBot.current = link
@@ -113,6 +158,10 @@ class CrawlerBot:
 		html = urllib2.urlopen(request).read()
 		parser = MetaParser()
 		parser.feed(html.lstrip())
+
+		if CrawlerBot.keyworded:
+			parser = TitleParser()
+			parser.feed(html.lstrip())
 
 		if CrawlerBot.nofollow == False:
 			parser = LinkParser()
@@ -184,6 +233,77 @@ class CrawlerBot:
 				f.write(line)
 			f.close()
 
+	def writeXMLKeywordedSitemap(self, links, disallowed, titles, descs, keywords, out):
+		xmlns = 'xmlns="https://github.io/CrawlerBot/keyworded-sitemap/1.0">'
+		timestamp = re.sub(' ', 'T', str(datetime.datetime.now()))
+		timestamp = re.sub('\.\d{6}', '+00:00', timestamp)
+
+		sitemap = xml.Document()
+		urlset = sitemap.createElement('urlset')
+		sitemap.appendChild(urlset)
+
+		sorted_links = []
+		i = 0
+		for link in links:
+			if link in sorted_links:
+				del titles[i]
+				del descs[i]
+				if len(keywords) > 0:
+					del keywords[i]
+			else:
+				sorted_links.append(link)
+			i = i + 1
+
+		i = 0
+		for link in sorted_links:
+			url = sitemap.createElement('url')
+			urlset.appendChild(url)
+			title = sitemap.createElement('title')
+			url.appendChild(title)
+			title_is = sitemap.createTextNode(titles[i])
+			title.appendChild(title_is)
+			description = sitemap.createElement('description')
+			url.appendChild(description)
+			description_is = sitemap.createTextNode(descs[i])
+			description.appendChild(description_is)
+			if len(keywords) > 0:
+				keywords = sitemap.createElement('keywords')
+				url.appendChild(keywords)
+				keywords_are = sitemap.createTextNode(keywords[i])
+				keywords.appendChild(keywords_are)
+			loc = sitemap.createElement('loc')
+			url.appendChild(loc)
+			loc_is = sitemap.createTextNode(link)
+			loc.appendChild(loc_is)
+			lastmod = sitemap.createElement('lastmod')
+			url.appendChild(lastmod)
+			lastmod_is = sitemap.createTextNode(timestamp)
+			lastmod.appendChild(lastmod_is)
+			changefreq = sitemap.createElement('changefreq')
+			url.appendChild(changefreq)
+			changefreq_is = sitemap.createTextNode('daily')
+			changefreq.appendChild(changefreq_is)
+			priority = sitemap.createElement('priority')
+			url.appendChild(priority)
+			priority_is = sitemap.createTextNode('0.8')
+			priority.appendChild(priority_is)
+			i = i + 1
+
+		if len(CrawlerBot.locs) > 0:
+			f = codecs.open(out, 'w', 'utf-8-sig')
+			f.write(sitemap.toprettyxml(encoding='utf-8'))
+			f.close()
+
+			f = codecs.open(out, 'r', 'utf-8-sig')
+			lines = f.readlines()
+			lines[1] = re.sub('\<urlset\>', '<urlset ' + xmlns, lines[1])
+
+			f = codecs.open(out, 'w', 'utf-8-sig')
+			for line in lines:
+				f.write(line)
+			f.close()
+
+
 # Parse robots.txt file for a site.
 class RobotsParser():
 
@@ -241,6 +361,21 @@ class RobotsParser():
 							print('Terminating...')
 						sys.exit(1)
 
+# Parse title for a site.
+class TitleParser(HTMLParser):
+
+	def handle_starttag(self, tag, attrs):
+		tag = tag.lower() # Treat title tag as lowercase.
+
+		if tag == 'title':
+			CrawlerBot.is_title = True
+		else:
+			CrawlerBot.is_title = False
+
+	def handle_data(self, data):
+		if CrawlerBot.is_title:
+			CrawlerBot.titles.append(data)
+
 # Parse metadata for a site.
 class MetaParser(HTMLParser):
 
@@ -249,10 +384,22 @@ class MetaParser(HTMLParser):
 
 		if tag == 'meta':
 			robots = False
+			description = False
+			keywords = False
+			loc = False
 			for attr in attrs:
 				if attr[0] == 'name' or attr[0] == 'NAME':
 					if attr[1] == 'robots' or attr[1] == 'ROBOTS':
 						robots = True
+					elif attr[1] == 'description' or attr[1] == 'DESCRIPTION':
+						description = True
+					elif attr[1] == 'keywords' or attr[1] == 'KEYWORDS':
+						keywords = True
+
+				elif attr[0] == 'http-equiv' or attr[0] == 'HTTP-EQUIV':
+					if attr[1] == 'Content-Location' or attr[1] == 'CONTENT-LOCATION':
+						loc = True
+
 				elif attr[0] == 'content' or attr[0] == 'CONTENT':
 					if robots:
 						if re.search('nofollow', attr[1], re.IGNORECASE):
@@ -266,6 +413,16 @@ class MetaParser(HTMLParser):
 								print('I will not index this page as directed by META element...')
 
 							CrawlerBot.disallowed.append(CrawlerBot.current)
+
+					elif description:
+							CrawlerBot.descs.append(attr[1])
+
+					elif keywords:
+							CrawlerBot.keywords.append(attr[1])
+
+					elif loc:
+							CrawlerBot.locs.append('{0}/{1}'.format(CrawlerBot.website, attr[1]))
+							CrawlerBot.cacheToDatabase('{0}/{1}'.format(CrawlerBot.website, attr[1]))
 
 # Parse internal links for a site [a(href="http://site.xyz/link.ext")].
 class LinkParser(HTMLParser):
@@ -330,9 +487,10 @@ parser.add_argument('-s', '--site', action='store', dest='site', metavar="SITE")
 parser.add_argument('-o', '--out', action='store', dest='out', metavar="OUT")
 parser.add_argument('-d', '--db', action='store_true', dest='db')
 parser.add_argument('-x', '--xml-sitemap', action='store_true', dest='sitemap')
+parser.add_argument('-k', '--keyworded', action='store_true', dest='keyworded')
 parser.add_argument('-l', '--verbose', action='store_true', dest='verbose')
 parser.add_argument('-v', '--version', action='store_true', dest='version')
 parser.add_argument('-i', '--info', action='store_true', dest='info')
 argv = parser.parse_args()
 
-CrawlerBot(argv.site, argv.out, argv.db, argv.sitemap, argv.verbose, argv.version, argv.info)
+CrawlerBot(argv.site, argv.out, argv.db, argv.sitemap, argv.keyworded, argv.verbose, argv.version, argv.info)
