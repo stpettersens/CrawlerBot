@@ -36,7 +36,7 @@ class CrawlerBot:
 	keyworded = False # Do not generate keyworded sitemap by default.
 	is_title = False
 	robots_str = 'CrawlerBot' # User agent string as used in a robots.txt user agent directive.
-	ua_str = 'Mozilla/5.0 (compatible; CrawlerBot/1.0; +https://github.com/stpettersens/crawlerbot)' 
+	ua_str = 'Mozilla/5.0 (compatible; CrawlerBot/1.0; +https://github.com/stpettersens/CrawlerBot)' 
 	headers = { 'User-Agent': ua_str }
 	# UA string as used in HTTP requests.
 	website = '' # Website to crawl; will be overriden on invocation.
@@ -57,7 +57,7 @@ class CrawlerBot:
 		# Close the connection.
 		conn.close()
 
-	def __init__(self, site, out, db, sitemap, keyworded, verbose, version, info):
+	def __init__(self, site, out, db, sitemap, keyworded, verbose, version, info, daemon):
 		if len(sys.argv) == 1 or info: 
 			print(__doc__) # Display program information.
 		elif version:
@@ -65,6 +65,15 @@ class CrawlerBot:
 		else:
 			if verbose == True: CrawlerBot.verbose = True # Set to be verbose.
 			self.doCrawl(site, out, db, keyworded, sitemap)
+
+		if daemon:
+			self.runAsDaemon(site, out, db, keyworded, sitemap)
+
+	# Run as daemon.
+	def runAsDaemon(self, site, out, db, keyworded, sitemap):
+		print('Running {0} as daemon...'.format(CrawlerBot.robots_str))
+		while True:
+			pass
 
 	# Do the crawl.
 	def doCrawl(self, site, out, db, keyworded, sitemap):
@@ -387,20 +396,21 @@ class MetaParser(HTMLParser):
 			description = False
 			keywords = False
 			loc = False
+
 			for attr in attrs:
-				if attr[0] == 'name' or attr[0] == 'NAME':
-					if attr[1] == 'robots' or attr[1] == 'ROBOTS':
+				if attr[0].lower() == 'name':
+					if attr[1].lower() == 'robots':
 						robots = True
-					elif attr[1] == 'description' or attr[1] == 'DESCRIPTION':
+					elif attr[1].lower() == 'description':
 						description = True
-					elif attr[1] == 'keywords' or attr[1] == 'KEYWORDS':
+					elif attr[1].lower() == 'keywords':
 						keywords = True
 
-				elif attr[0] == 'http-equiv' or attr[0] == 'HTTP-EQUIV':
-					if attr[1] == 'Content-Location' or attr[1] == 'CONTENT-LOCATION':
+				elif attr[0].lower() == 'http-equiv':
+					if attr[1].lower() == 'Content-Location':
 						loc = True
 
-				elif attr[0] == 'content' or attr[0] == 'CONTENT':
+				elif attr[0].lower() == 'content':
 					if robots:
 						if re.search('nofollow', attr[1], re.IGNORECASE):
 							if CrawlerBot.verbose:
@@ -491,6 +501,8 @@ parser.add_argument('-k', '--keyworded', action='store_true', dest='keyworded')
 parser.add_argument('-l', '--verbose', action='store_true', dest='verbose')
 parser.add_argument('-v', '--version', action='store_true', dest='version')
 parser.add_argument('-i', '--info', action='store_true', dest='info')
+parser.add_argument('-m', '--daemon', action='store_true', dest='daemon')
 argv = parser.parse_args()
 
-CrawlerBot(argv.site, argv.out, argv.db, argv.sitemap, argv.keyworded, argv.verbose, argv.version, argv.info)
+CrawlerBot(argv.site, argv.out, argv.db, argv.sitemap, argv.keyworded, 
+argv.verbose, argv.version, argv.info, argv.daemon)
