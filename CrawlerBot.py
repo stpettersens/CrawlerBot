@@ -13,6 +13,7 @@ Use -h switch for usage information.
 import sys
 import os
 import re
+import time
 import codecs
 import argparse
 import datetime
@@ -30,9 +31,11 @@ class CrawlerBot:
 	descs = [] # Descriptions for links.
 	keywords = [] # Keywords for links.
 	locs = [] # Links for keyworded sitemap.
+	sitemaps = [] # Links for found sitemaps.
 
 	nofollow = False # Do not follow a link.
 	verbose = False # Not verbose by default.
+	daemon = False # Not a daemon by default.
 	keyworded = False # Do not generate keyworded sitemap by default.
 	is_title = False
 	robots_str = 'CrawlerBot' # User agent string as used in a robots.txt user agent directive.
@@ -57,23 +60,38 @@ class CrawlerBot:
 		# Close the connection.
 		conn.close()
 
-	def __init__(self, site, out, db, sitemap, keyworded, verbose, version, info, daemon):
+	def __init__(self, site, out, db, sitemap, keyworded, verbose, version, info, daemon, interval):
 		if len(sys.argv) == 1 or info: 
-			print(__doc__) # Display program information.
+			_print(__doc__) # Display program information.
 		elif version:
-			print(CrawlerBot.ua_str) # Print user-agent string, which contains version (1.0).
+			_print(CrawlerBot.ua_str) # Print user-agent string, which contains version (1.0).
 		else:
 			if verbose == True: CrawlerBot.verbose = True # Set to be verbose.
-			self.doCrawl(site, out, db, keyworded, sitemap)
+			if daemon:
+				if interval == None: interval = 7200 # Defaults to 7200 seconds or a 2 hour interval.
+				self.runAsDaemon(site, out, db, keyworded, sitemap, interval)
+			else:
+				self.doCrawl(site, out, db, keyworded, sitemap)
 
-		if daemon:
-			self.runAsDaemon(site, out, db, keyworded, sitemap)
+	# Reset for daemon mode.
+	def reset(self):
+		CrawlerBot.nofollow = False
+		CrawlerBot.disallowed = []
+		CrawlerBot.links = []
+		CrawlerBot.titles = []
+		CrawlerBot.descs = []
+		CrawlerBot.keywords = [] 
+		CrawlerBot.locs = []
+		CrawlerBot.sitemaps = []
 
 	# Run as daemon.
-	def runAsDaemon(self, site, out, db, keyworded, sitemap):
-		print('Running {0} as daemon...'.format(CrawlerBot.robots_str))
+	def runAsDaemon(self, site, out, db, keyworded, sitemap, interval):
+		CrawlerBot.daemon = True # I am a daemon.
+		_print('Running {0} as daemon...'.format(CrawlerBot.robots_str))
 		while True:
-			pass
+			self.doCrawl(site, out, db, keyworded, sitemap)	
+			self.reset()
+			time.sleep(int(interval))
 
 	# Do the crawl.
 	def doCrawl(self, site, out, db, keyworded, sitemap):
@@ -84,6 +102,8 @@ class CrawlerBot:
 		CrawlerBot.current = site
 		CrawlerBot.keyworded = keyworded
 		CrawlerBot.links.append(site)
+
+		_print('Crawling initiated at {0}.'.format(datetime.datetime.now()))
 		
 		request = urllib2.Request(site + '/robots.txt', None, CrawlerBot.headers)
 		robots = urllib2.urlopen(request).read()
@@ -106,6 +126,8 @@ class CrawlerBot:
 			sorted_links = self.trimLinks(CrawlerBot.links, CrawlerBot.disallowed)
 			for link in sorted_links:
 				self.followLink(link)
+
+		_print('Crawling terminated at {0}.'.format(datetime.datetime.now()))
 
 		if db:
 			if out == None: out = 'links.db'
@@ -176,10 +198,9 @@ class CrawlerBot:
 			parser = LinkParser()
 			parser.feed(html.lstrip())
 
-			if CrawlerBot.verbose:
-				print('----------------------------------------------------------------')
-				print('Following link ---> {0}'.format(link))
-				print('----------------------------------------------------------------')
+			_print('----------------------------------------------------------------')
+			_print('Following link ---> {0}'.format(link))
+			_print('----------------------------------------------------------------')
 
 	# Write list of links to a SQLite database file.
 	def writeToDatabase(self, links, disallowed, out):
@@ -322,8 +343,8 @@ class RobotsParser():
 		i = 0
 		x = 1
 		robots_file = robots_file.split('\n')
-		if CrawlerBot.verbose:
-			print('Parsing /robots.txt from {0}...'.format(CrawlerBot.website))
+
+		_print('Parsing /robots.txt from {0}...'.format(CrawlerBot.website))
 
 		for line in robots_file:
 
@@ -331,9 +352,8 @@ class RobotsParser():
 				ua_pair = line.split() # Split into 'User-agent:' and 'CrawlerBot|*'
 				matched = re.search(RobotsParser.ua_match, ua_pair[1], re.IGNORECASE) # Applies to this crawler if it matches... 
 				if matched != None:
-					if matched.group(0): # ... CrawlerBot (any case) or * (wildcard).
-						if CrawlerBot.verbose: 
-							print('Identified a user-agent directive applicable to me (\'{0}\'):'.format(ua_pair[1]))
+					if matched.group(0): # ... CrawlerBot (any case) or * (wildcard): 
+						_print('Identified a user-agent directive applicable to me (\'{0}\'):'.format(ua_pair[1]))
 						break			
 			i = i + 1
 
@@ -341,33 +361,26 @@ class RobotsParser():
 
 			if line.startswith('Sitemap:'):
 				sitemap_pair = line.split()
-				if CrawlerBot.verbose:
-					print('I have found a sitemap: {0}'.format(sitemap_pair[1]))
-					print('Parsing sitemap...')
-				pass # TODO...
-				#request = urllib2.Request(sitemap_pair[1], None, CrawlerBot.headers)
-				#xml = urllib2.urlopen(request).read()
-				#parser = SitemapParser()
-				#parser.feed(xml.lstrip())
-				#sys.exit(0)
+				_print('I have found a sitemap: {0}'.format(sitemap_pair[1]))
+				_print('Parsing sitemap...')
+				request = urllib2.Request(sitemap_pair[1], None, CrawlerBot.headers)
+				xml = urllib2.urlopen(request).read()
+				parser = SitemapParser()
+				parser.feed(xml.lstrip())
 
 			elif line.startswith('Allow:'):
 				allow_pair = line.split()
-				if CrawlerBot.verbose:
-					print('I am allowed ({0}-ed) to scan: {1}'.format(allow_pair[0][:-1], allow_pair[1]))
+				_print('I am allowed ({0}-ed) to scan: {1}'.format(allow_pair[0][:-1], allow_pair[1]))
 
 			elif line.startswith('Disallow:'):
 					forbidden_pair = line.split()
-					if CrawlerBot.verbose:
-						print('I am forbidden ({0}-ed) from following: {1}'.format(forbidden_pair[0][:-1], forbidden_pair[1]))
-
+					_print('I am forbidden ({0}-ed) from following: {1}'.format(forbidden_pair[0][:-1], forbidden_pair[1]))
 					CrawlerBot.disallowed.append('{0}{1}'.format(CrawlerBot.website, forbidden_pair[1]))
 
 					# When / is forbidden, CrawlerBot is cannot crawl specified site,so it will terminate.
 					if forbidden_pair[1] == '/': 
-						if CrawlerBot.verbose:
-							print('I am forbidden from crawling {0}.\nI will comply.'.format(CrawlerBot.website))
-							print('Terminating...')
+						_print('I am forbidden from crawling {0}.\nI will comply.'.format(CrawlerBot.website))
+						_print('Terminating...')
 						sys.exit(1)
 
 # Parse title for a site.
@@ -407,21 +420,17 @@ class MetaParser(HTMLParser):
 						keywords = True
 
 				elif attr[0].lower() == 'http-equiv':
-					if attr[1].lower() == 'Content-Location':
+					if attr[1].lower() == 'content-location':
 						loc = True
 
 				elif attr[0].lower() == 'content':
 					if robots:
 						if re.search('nofollow', attr[1], re.IGNORECASE):
-							if CrawlerBot.verbose:
-								print('I am not following links on this page as directed by META element...')
-
+							_print('I am not following links on this page as directed by META element...')
 							CrawlerBot.nofollow = True
 
 						if re.search('noindex', attr[1], re.IGNORECASE):
-							if CrawlerBot.verbose:
-								print('I will not index this page as directed by META element...')
-
+							_print('I will not index this page as directed by META element...')
 							CrawlerBot.disallowed.append(CrawlerBot.current)
 
 					elif description:
@@ -449,19 +458,16 @@ class LinkParser(HTMLParser):
 
 			full = re.search('^https?://|#', link)	# Identify out-bound (external) links and ignore them.
 			if full or CrawlerBot.nofollow:
-				if CrawlerBot.verbose:
-					if full == None: link = '{0}/{1}'.format(CrawlerBot.website, link).lstrip()
-					link = re.sub('\/index\.\w{3,4}', '', link)
-					print('Ignoring external, \'nofollow\' or # link: {0}'.format(link))
-				pass
+				if full == None: link = '{0}/{1}'.format(CrawlerBot.website, link).lstrip()
+				link = re.sub('\/index\.\w{3,4}', '', link)
+				_print('Ignoring external, \'nofollow\' or # link: {0}'.format(link))
 
 			else:
 				link = '{0}/{1}'.format(CrawlerBot.website, link).lstrip()
 				link = re.sub('\/index\.\w{3,4}', '', link)
 				link = re.sub('/{2}', '/', link)
 				link = re.sub('p:/', 'p://', link)
-				if CrawlerBot.verbose:
-					print('Processing link: {0}'.format(link))
+				_print('Processing link: {0}'.format(link))
 			
 				CrawlerBot.links.append(link)
 				CrawlerBot.cacheToDatabase(link)
@@ -472,23 +478,25 @@ class SitemapParser():
 	def feed(self, sitemap):
 		dom = xml.parseString(sitemap)
 		self.handleSitemap(dom)
-
-	def getText(self, nodelist):
-		rc = []
-		for node in nodelist:
-			if node.nodeType == node.TEXT_NODE:
-				rc.append(node.data)
-		return ''.join(rc)
 		
 	def handleSitemap(self, sitemap):
 		sitemaps = sitemap.getElementsByTagName('sitemap')
 		for sitemap in sitemaps:
-			loc = sitemap.getElementsByTagName('loc')
-			self.handleLocText(loc)
+			loc = sitemap.getElementsByTagName('loc')[0].childNodes[0].data
+			if loc.endswith('.xml'):
+				_print('Processing sitemap: {0}'.format(loc))
+				CrawlerBot.sitemaps.append(loc)
+			else:
+				_print('Processing link: {0}'.format(loc))
+				CrawlerBot.links.append(loc)
 
-	def handleLocText(self, loc):
-		loc_is = '<loc>{0}</loc>'.format(self.getText(loc.childNodes))
+# Print to stdout or stderr as applicable.
+def _print(message):
+	if CrawlerBot.daemon and CrawlerBot.verbose:
+		sys.stderr.write(message + '\n')
 
+	elif CrawlerBot.verbose:
+		print(message)
 
 # Handle any command line arguments.
 parser = argparse.ArgumentParser(description='CrawlerBot: A website crawler which can'
@@ -502,7 +510,8 @@ parser.add_argument('-l', '--verbose', action='store_true', dest='verbose')
 parser.add_argument('-v', '--version', action='store_true', dest='version')
 parser.add_argument('-i', '--info', action='store_true', dest='info')
 parser.add_argument('-m', '--daemon', action='store_true', dest='daemon')
+parser.add_argument('-p', '--interval', action='store', dest='interval', metavar="INTERVAL")
 argv = parser.parse_args()
 
 CrawlerBot(argv.site, argv.out, argv.db, argv.sitemap, argv.keyworded, 
-argv.verbose, argv.version, argv.info, argv.daemon)
+argv.verbose, argv.version, argv.info, argv.daemon, argv.interval)
