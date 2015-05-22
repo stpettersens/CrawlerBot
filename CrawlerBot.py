@@ -37,7 +37,7 @@ class CrawlerBot:
 	nofollow = False # Do not follow a link.
 	verbose = False # Not verbose by default.
 	daemon = False # Not a daemon by default.
-	keyworded = False # Do not generate keyworded sitemap by default.#
+	keyworded = False # Do not generate keyworded sitemap by default.
 	sites = []
 	types = []
 	outs = []
@@ -241,7 +241,6 @@ class CrawlerBot:
 		if CrawlerBot.nofollow == False:
 			parser = LinkParser()
 			parser.feed(html.lstrip())
-
 			_print('----------------------------------------------------------------')
 			_print('Following link ---> {0}'.format(link))
 			_print('----------------------------------------------------------------')
