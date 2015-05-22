@@ -20,6 +20,7 @@ import datetime
 import urllib2
 import sqlite3
 from HTMLParser import HTMLParser
+import xml.etree.ElementTree as ET
 import xml.dom.minidom as xml
 
 # This class handles the crawling itself.
@@ -36,7 +37,10 @@ class CrawlerBot:
 	nofollow = False # Do not follow a link.
 	verbose = False # Not verbose by default.
 	daemon = False # Not a daemon by default.
-	keyworded = False # Do not generate keyworded sitemap by default.
+	keyworded = False # Do not generate keyworded sitemap by default.#
+	sites = []
+	types = []
+	outs = []
 	is_title = False
 	robots_str = 'CrawlerBot' # User agent string as used in a robots.txt user agent directive.
 	ua_str = 'Mozilla/5.0 (compatible; CrawlerBot/1.0; +https://github.com/stpettersens/CrawlerBot)' 
@@ -60,18 +64,32 @@ class CrawlerBot:
 		# Close the connection.
 		conn.close()
 
-	def __init__(self, site, out, db, sitemap, keyworded, verbose, version, info, daemon, interval):
+	def __init__(self, crawl_file, site, out, db, sitemap, keyworded, verbose, version, info, daemon, interval):
 		if len(sys.argv) == 1 or info: 
 			print(__doc__) # Display program information.
 		elif version:
 			print(CrawlerBot.ua_str) # Print user-agent string, which contains version (1.0).
+		elif file != None:
+			self.loadCrawlJobs(crawl_file)
+		
+		if site == None: site = ''
+		if verbose == True: CrawlerBot.verbose = True # Set to be verbose.
+		if daemon:
+			if interval == None: interval = 7200 # Defaults to 7200 seconds or a 2 hour interval.
+			self.runAsDaemon(site, out, db, keyworded, sitemap, interval)
+		elif len(CrawlerBot.sites) > 0:
+			self.doCrawls()
 		else:
-			if verbose == True: CrawlerBot.verbose = True # Set to be verbose.
-			if daemon:
-				if interval == None: interval = 7200 # Defaults to 7200 seconds or a 2 hour interval.
-				self.runAsDaemon(site, out, db, keyworded, sitemap, interval)
-			else:
-				self.doCrawl(site, out, db, keyworded, sitemap)
+			self.doCrawl(site, out, db, keyworded, sitemap)
+
+	# Load crawl jobs from file
+	def loadCrawlJobs(self, crawl_file):
+		tree = ET.parse(crawl_file)
+		root = tree.getroot()
+		for child in root.findall('crawl-job'):
+			CrawlerBot.sites.append(child.get('site'))
+			CrawlerBot.types.append(child.find('type').text)
+			CrawlerBot.outs.append(child.find('out').text)
 
 	# Reset for daemon mode.
 	def reset(self):
@@ -89,9 +107,35 @@ class CrawlerBot:
 		CrawlerBot.daemon = True # I am a daemon.
 		_print('Running {0} as daemon...'.format(CrawlerBot.robots_str))
 		while True:
-			self.doCrawl(site, out, db, keyworded, sitemap)	
-			self.reset()
+			if len(CrawlerBot.sites) > 0:
+				self.doCrawls()
+			else:			
+				self.doCrawl(site, out, db, keyworded, sitemap)	
+				self.reset()
+
 			time.sleep(int(interval))
+
+	# Do more than one crawl.
+	def doCrawls(self):
+		i = 0
+		keyworded = False
+		sitemap = False
+		db = False
+		for site in CrawlerBot.sites:
+			type_is = CrawlerBot.types[i]
+			if type_is == 'sitemap': 
+				keyworded = False
+				sitemap = True
+			elif type_is == 'kw-sitemap':
+				keyworded = True
+				sitemap = True
+			elif type_is == 'db':
+				db = True
+				sitemap = False
+
+			self.doCrawl(site, CrawlerBot.outs[i], db, keyworded, sitemap)
+			self.reset()
+			i = i + 1
 
 	# Do the crawl.
 	def doCrawl(self, site, out, db, keyworded, sitemap):
@@ -248,7 +292,7 @@ class CrawlerBot:
 			priority_is = sitemap.createTextNode('0.8')
 			priority.appendChild(priority_is)
 
-		if len(CrawlerBot.links) > 1:
+		if len(CrawlerBot.links) > 0:
 			f = codecs.open(out, 'w', 'utf-8-sig')
 			f.write(sitemap.toprettyxml(encoding='utf-8'))
 			f.close()
@@ -340,7 +384,6 @@ class RobotsParser():
 
 	def feed(self, robots_file):
 		i = 0
-		x = 1
 		robots_file = robots_file.split('\n')
 
 		_print('Parsing /robots.txt from {0}...'.format(CrawlerBot.website))
@@ -500,6 +543,7 @@ def _print(message):
 # Handle any command line arguments.
 parser = argparse.ArgumentParser(description='CrawlerBot: A website crawler which can'
 + ' store scraped links in a SQLite database or generate an XML sitemap.')
+parser.add_argument('-f', '--file', action='store', dest='file', metavar="FILE")
 parser.add_argument('-s', '--site', action='store', dest='site', metavar="SITE")
 parser.add_argument('-o', '--out', action='store', dest='out', metavar="OUT")
 parser.add_argument('-d', '--db', action='store_true', dest='db')
@@ -512,5 +556,5 @@ parser.add_argument('-m', '--daemon', action='store_true', dest='daemon')
 parser.add_argument('-p', '--interval', action='store', dest='interval', metavar="INTERVAL")
 argv = parser.parse_args()
 
-CrawlerBot(argv.site, argv.out, argv.db, argv.sitemap, argv.keyworded, 
+CrawlerBot(argv.file, argv.site, argv.out, argv.db, argv.sitemap, argv.keyworded, 
 argv.verbose, argv.version, argv.info, argv.daemon, argv.interval)

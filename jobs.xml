@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<crawl-jobs>
+	<crawl-job site="http://www.un-po.co">
+		<type>kw-sitemap</type>
+		<out>/home/sam/public_html/cors/un-po.co_sitemap.xml</out>
+	</crawl-job>
+</crawl-jobs>
