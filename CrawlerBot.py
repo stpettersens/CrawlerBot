@@ -349,7 +349,7 @@ class RobotsParser():
 
 			if line.startswith('User-agent:'): # Identify a user-agent directive and analyze it.
 				ua_pair = line.split() # Split into 'User-agent:' and 'CrawlerBot|*'
-				matched = re.search(RobotsParser.ua_match, ua_pair[1], re.IGNORECASE) # Applies to this crawler if it matches... 
+				matched = re.match(RobotsParser.ua_match, ua_pair[1], re.IGNORECASE) # Applies to this crawler if it matches... 
 				if matched != None:
 					if matched.group(0): # ... CrawlerBot (any case) or * (wildcard): 
 						_print('Identified a user-agent directive applicable to me (\'{0}\'):'.format(ua_pair[1]))
