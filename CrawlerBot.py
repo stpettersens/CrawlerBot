@@ -62,9 +62,9 @@ class CrawlerBot:
 
 	def __init__(self, site, out, db, sitemap, keyworded, verbose, version, info, daemon, interval):
 		if len(sys.argv) == 1 or info: 
-			_print(__doc__) # Display program information.
+			print(__doc__) # Display program information.
 		elif version:
-			_print(CrawlerBot.ua_str) # Print user-agent string, which contains version (1.0).
+			print(CrawlerBot.ua_str) # Print user-agent string, which contains version (1.0).
 		else:
 			if verbose == True: CrawlerBot.verbose = True # Set to be verbose.
 			if daemon:
@@ -332,7 +332,6 @@ class CrawlerBot:
 			for line in lines:
 				f.write(line)
 			f.close()
-
 
 # Parse robots.txt file for a site.
 class RobotsParser():
