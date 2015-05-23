@@ -41,6 +41,7 @@ class CrawlerBot:
 	sites = []
 	types = []
 	outs = []
+	last_mod = ''
 	is_title = False
 	robots_str = 'CrawlerBot' # User agent string as used in a robots.txt user agent directive.
 	ua_str = 'Mozilla/5.0 (compatible; CrawlerBot/1.0; +https://github.com/stpettersens/CrawlerBot)' 
@@ -70,13 +71,14 @@ class CrawlerBot:
 		elif version:
 			print(CrawlerBot.ua_str) # Print user-agent string, which contains version (1.0).
 		elif file != None:
+			CrawlerBot.last_mod = os.stat(crawl_file).st_mtime
 			self.loadCrawlJobs(crawl_file)
 		
 		if site == None: site = ''
 		if verbose == True: CrawlerBot.verbose = True # Set to be verbose.
 		if daemon:
 			if interval == None: interval = 7200 # Defaults to 7200 seconds or a 2 hour interval.
-			self.runAsDaemon(site, out, db, keyworded, sitemap, interval)
+			self.runAsDaemon(site, out, db, keyworded, sitemap, interval, crawl_file)
 		elif len(CrawlerBot.sites) > 0:
 			self.doCrawls()
 		else:
@@ -84,6 +86,9 @@ class CrawlerBot:
 
 	# Load crawl jobs from file
 	def loadCrawlJobs(self, crawl_file):
+		CrawlerBot.sites = []
+		CrawlerBot.types = []
+		CrawlerBot.outs = []
 		tree = ET.parse(crawl_file)
 		root = tree.getroot()
 		for child in root.findall('crawl-job'):
@@ -103,10 +108,16 @@ class CrawlerBot:
 		CrawlerBot.sitemaps = []
 
 	# Run as daemon.
-	def runAsDaemon(self, site, out, db, keyworded, sitemap, interval):
+	def runAsDaemon(self, site, out, db, keyworded, sitemap, interval, crawl_file):
 		CrawlerBot.daemon = True # I am a daemon.
 		_print('Running {0} as daemon...'.format(CrawlerBot.robots_str))
 		while True:
+			last_mod = CrawlerBot.last_mod
+			CrawlerBot.last_mod = os.stat(crawl_file).st_mtime
+			if last_mod != CrawlerBot.last_mod:
+				_print('Crawl file was modified.')
+				self.loadCrawlJobs(crawl_file)
+
 			if len(CrawlerBot.sites) > 0:
 				self.doCrawls()
 			else:			
