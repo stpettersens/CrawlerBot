@@ -70,8 +70,10 @@ class CrawlerBot:
 			print(__doc__) # Display program information.
 		elif version:
 			print(CrawlerBot.ua_str) # Print user-agent string, which contains version (1.0).
-		elif file != None:
-			CrawlerBot.last_mod = os.stat(crawl_file).st_mtime
+		elif crawl_file != None:
+			if os.path.exists(crawl_file):
+				CrawlerBot.last_mod = os.stat(crawl_file).st_mtime
+				
 			self.loadCrawlJobs(crawl_file)
 		
 		if site == None: site = ''
@@ -170,17 +172,11 @@ class CrawlerBot:
 		parser = MetaParser()
 		parser.feed(html.lstrip())
 
-		if keyworded:
-			parser = TitleParser()
-			parser.feed(html.lstrip())
+		parser = TitleParser()
+		parser.feed(html.lstrip())
 
 		if CrawlerBot.nofollow == False:
-			parser = LinkParser()
-			parser.feed(html.lstrip())
-
-			sorted_links = self.trimLinks(CrawlerBot.links, CrawlerBot.disallowed)
-			for link in sorted_links:
-				self.followLink(link)
+			self.followLinks()
 
 		_print('Crawling terminated at {0}.'.format(datetime.datetime.now()))
 
@@ -194,7 +190,7 @@ class CrawlerBot:
 			else:
 				if out == None: out = 'kw-sitemap.xml'
 				self.writeXMLKeywordedSitemap(
-					CrawlerBot.locs, 
+					CrawlerBot.locs,
 				 	CrawlerBot.disallowed,
 				 	CrawlerBot.titles,
 				 	CrawlerBot.descs,
@@ -237,24 +233,27 @@ class CrawlerBot:
 		return f_sorted_keywords
 
 	# Follow a link
-	def followLink(self, link):
-		CrawlerBot.current = link
-
-		request = urllib2.Request(link, None, CrawlerBot.headers)
-		html = urllib2.urlopen(request).read()
-		parser = MetaParser()
-		parser.feed(html.lstrip())
-
-		if CrawlerBot.keyworded:
-			parser = TitleParser()
-			parser.feed(html.lstrip())
+	def followLinks(self):
+		#CrawlerBot.current = link
 
 		if CrawlerBot.nofollow == False:
-			parser = LinkParser()
-			parser.feed(html.lstrip())
-			_print('----------------------------------------------------------------')
-			_print('Following link ---> {0}'.format(link))
-			_print('----------------------------------------------------------------')
+			i = 0
+			while i < len(CrawlerBot.links):
+				request = urllib2.Request(CrawlerBot.links[i], None, CrawlerBot.headers)
+				html = urllib2.urlopen(request).read()
+				parser = LinkParser()
+				parser.feed(html.lstrip())
+				_print('----------------------------------------------------------------')
+				_print('Following link ---> {0}'.format(CrawlerBot.links[i]))
+				_print('----------------------------------------------------------------')
+
+				parser = MetaParser()
+				parser.feed(html.lstrip())
+
+				parser = TitleParser()
+				parser.feed(html.lstrip())
+				CrawlerBot.links = self.trimLinks(CrawlerBot.links, CrawlerBot.disallowed)
+				i = i + 1
 
 	# Write list of links to a SQLite database file.
 	def writeToDatabase(self, links, disallowed, out):
@@ -303,22 +302,22 @@ class CrawlerBot:
 			priority.appendChild(priority_is)
 
 		if len(CrawlerBot.links) > 0:
-			f = codecs.open(out, 'w', 'utf-8-sig')
+			f = codecs.open(out, 'w', 'utf-8')
 			f.write(sitemap.toprettyxml(encoding='utf-8'))
 			f.close()
 
-			f = codecs.open(out, 'r', 'utf-8-sig')
+			f = codecs.open(out, 'r', 'utf-8')
 			lines = f.readlines()
 			f.close()
 			lines[1] = re.sub('\<urlset\>', '<urlset ' + xmlns, lines[1])
 		
-			f = codecs.open(out, 'w', 'utf-8-sig')
+			f = codecs.open(out, 'w', 'utf-8')
 			for line in lines:
 				f.write(line)
 			f.close()
 
 	def writeXMLKeywordedSitemap(self, links, disallowed, titles, descs, keywords, out):
-		xmlns = 'xmlns="https://github.io/CrawlerBot/keyworded-sitemap/1.0">'
+		xmlns = 'xmlns="https://stpettersens.github.io/CrawlerBot/keyworded-sitemap/1.0">'
 		timestamp = re.sub(' ', 'T', str(datetime.datetime.now()))
 		timestamp = re.sub('\.\d{6}', '+00:00', timestamp)
 
@@ -326,20 +325,8 @@ class CrawlerBot:
 		urlset = sitemap.createElement('urlset')
 		sitemap.appendChild(urlset)
 
-		sorted_links = []
 		i = 0
-		for link in links:
-			if link in sorted_links:
-				del titles[i]
-				del descs[i]
-				if len(keywords) > 0:
-					del keywords[i]
-			else:
-				sorted_links.append(link)
-			i = i + 1
-
-		i = 0
-		for link in sorted_links:
+		for link in links: #sorted_links:
 			url = sitemap.createElement('url')
 			urlset.appendChild(url)
 			title = sitemap.createElement('title')
@@ -351,10 +338,10 @@ class CrawlerBot:
 			description_is = sitemap.createTextNode(descs[i])
 			description.appendChild(description_is)
 			if len(keywords) > 0:
-				keywords = sitemap.createElement('keywords')
-				url.appendChild(keywords)
-				keywords_are = sitemap.createTextNode(keywords[i])
-				keywords.appendChild(keywords_are)
+				kwds = sitemap.createElement('keywords')
+				url.appendChild(kwds)
+				kwds_are = sitemap.createTextNode(keywords[i])
+				kwds.appendChild(kwds_are)
 			loc = sitemap.createElement('loc')
 			url.appendChild(loc)
 			loc_is = sitemap.createTextNode(link)
@@ -374,19 +361,19 @@ class CrawlerBot:
 			i = i + 1
 
 		if len(CrawlerBot.locs) > 0:
-			f = codecs.open(out, 'w', 'utf-8-sig')
+			f = codecs.open(out, 'w', 'utf-8')
 			f.write(sitemap.toprettyxml(encoding='utf-8'))
 			f.close()
 
-			f = codecs.open(out, 'r', 'utf-8-sig')
+			f = codecs.open(out, 'r', 'utf-8')
 			lines = f.readlines()
 			lines[1] = re.sub('\<urlset\>', '<urlset ' + xmlns, lines[1])
 
-			f = codecs.open(out, 'w', 'utf-8-sig')
+			f = codecs.open(out, 'w', 'utf-8')
 			for line in lines:
 				f.write(line)
 			f.close()
-
+			
 # Parse robots.txt file for a site.
 class RobotsParser():
 
@@ -448,6 +435,7 @@ class TitleParser(HTMLParser):
 
 	def handle_data(self, data):
 		if CrawlerBot.is_title:
+			_print('Title is: ' + data)
 			CrawlerBot.titles.append(data)
 
 # Parse metadata for a site.
@@ -486,9 +474,11 @@ class MetaParser(HTMLParser):
 							CrawlerBot.disallowed.append(CrawlerBot.current)
 
 					elif description:
+							_print('Description is: ' + attr[1])
 							CrawlerBot.descs.append(attr[1])
 
 					elif keywords:
+							_print('Keywords are: ' + attr[1])
 							CrawlerBot.keywords.append(attr[1])
 
 					elif loc:
